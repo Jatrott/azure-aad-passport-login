@@ -74,6 +74,7 @@ server.get('/auth/openid/return',
 server.get('/logout', function(req, res, next){
   req.logout();
   res.redirect('/', next);
+
 });
 
 passport.serializeUser(function(user, done) {
