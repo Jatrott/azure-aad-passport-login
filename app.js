@@ -63,17 +63,25 @@ server.get('/login', function (req, res, next) {
 
 server.get('/api/OAuthCallback',
   passport.authenticate('azuread-openidconnect', { failureRedirect: '/login' }),
-  (req, res) => {
+  (req, res, next) => {
     console.log('OAuthCallback');
     console.log(req);
     const address = JSON.parse(req.query.state);
     const magicCode = crypto.randomBytes(4).toString('hex');
     const messageData = { magicCode: magicCode, accessToken: req.user.accessToken, refreshToken: req.user.refreshToken, userId: address.user.id, name: req.user.displayName, email: req.user.preferred_username };
-    
-    var continueMsg = new builder.Message().address(address).text(JSON.stringify(messageData));
-    console.log(continueMsg.toMessage());
 
-    res.send('Welcome ' + req.user.displayName + '! Please copy this number and paste it back to your chat so your authentication can complete: ' + magicCode);
+    res.send('Welcome ' + req.user.displayName);// + '! ' + JSON.stringify(messageData));
+    res.end();
+    return next();
+});
+
+server.get('/api/foo',
+  passport.authenticate('azuread-openidconnect', { failureRedirect: '/login' }),
+  (req, res, next) => {
+    console.log('FOO BAR');
+    res.send('FOO-BAR');
+    res.end();
+    return next();
 });
 
 passport.serializeUser(function(user, done) {
