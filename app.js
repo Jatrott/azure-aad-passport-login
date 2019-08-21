@@ -29,7 +29,7 @@ server.listen(process.env.port || process.env.PORT || 3979, function () {
 });
   
 console.log('Started...')
-var callbackURI = AUTH_CALLBACKHOST + '/api/OAuthCallback';
+var callbackURI = AUTH_CALLBACKHOST + '/auth/openid/return';
 console.log('MY CALLBACK: ' + callbackURI);
 
 //=========================================================
@@ -41,39 +41,39 @@ server.use(restify.bodyParser());
 server.use(expressSession({ secret: 'keyboard cat', resave: true, saveUninitialized: false }));
 server.use(passport.initialize());
 
-server.get('/login', function (req, res, next) {
-  passport.authenticate('azuread-openidconnect', { failureRedirect: '/login', customState: req.query.address, resourceURL: process.env.MICROSOFT_RESOURCE }, function (err, user, info) {
-    console.log('login');
-    if (err) {
-      console.log(err);
-      return next(err);
-    }
-    if (!user) {
-      return res.redirect('/login');
-    }
-    req.logIn(user, function (err) {
-      if (err) {
-        return next(err);
-      } else {
-        return res.send('Welcome ' + req.user.displayName);
-      }
-    });
-  })(req, res, next);
+// Root doesn't require authentication.
+server.get('/', 
+  function(req, res, next) {
+    console.log('Root, has been served');
+    res.write('I am (g)root');
+    res.end();
+    return next();
 });
 
-server.post('/api/OAuthCallback',
-  passport.authenticate('azuread-openidconnect', { failureRedirect: '/login' }),
-  (req, res) => {
-    console.log('OAuthCallback');
-    console.log(req);
-    const address = JSON.parse(req.query.state);
-    const magicCode = crypto.randomBytes(4).toString('hex');
-    const messageData = { magicCode: magicCode, accessToken: req.user.accessToken, refreshToken: req.user.refreshToken, userId: address.user.id, name: req.user.displayName, email: req.user.preferred_username };
-    
-    var continueMsg = new builder.Message().address(address).text(JSON.stringify(messageData));
-    console.log(continueMsg.toMessage());
+server.get('/login', 
+  passport.authenticate('azuread-openidconnect', { failureRedirect: '/' }),
+  function(req, res, next) {
+    console.log('Login function was called in the Sample'); // This wont happen due to passport redirect to the provided redirect URI.
+    res.redirect('/', next);
+});
 
-    res.send('Welcome ' + req.user.displayName + '! Please copy this number and paste it back to your chat so your authentication can complete: ' + magicCode);
+// POST /auth/openid/return
+//   Use passport.authenticate() as route middleware to authenticate the
+//   request.  If authentication fails, the user will be redirected back to the
+//   home page.  Otherwise, the primary route function function will be called,
+//   which, in this example, will redirect the user to the home page.
+server.get('/auth/openid/return',
+  passport.authenticate('azuread-openidconnect', { failureRedirect: '/' }),
+  function(req, res, next) { 
+    console.log("the king (authentication) has returned");
+    res.write('I am authenticated (g)root');
+    res.end();
+    return next();
+  });
+
+server.get('/logout', function(req, res, next){
+  req.logout();
+  res.redirect('/', next);
 });
 
 passport.serializeUser(function(user, done) {
@@ -97,15 +97,15 @@ let oidStrategyv2 = {
   validateIssuer: false,
   allowHttpForRedirectUrl: true,
   responseType: 'code',
-  responseMode: 'form_post',
+  responseMode: 'query',
   scope:['email', 'profile', 'offline_access', 'https://outlook.office.com/mail.read'],
-  passReqToCallback: true
+  passReqToCallback: false
 };
 
 // Use the v1 endpoint (applications configured by manage.windowsazure.com)
 // This works against Azure AD
 let oidStrategyv1 = {
-  redirectUrl: AUTH_CALLBACKHOST +'/api/OAuthCallback',
+  redirectUrl: callbackURI,
   realm: realm,
   clientID: AZUREAD_APP_ID,
   clientSecret: AZUREAD_APP_PASSWORD,
@@ -127,16 +127,37 @@ if ( AUTH_STRATEGY == 'oidStrategyv2') {
   strategy = oidStrategyv2;
 }
 
+var users = [];
+
+var findByOid = function(oid, fn) {
+  for (var i = 0, len = users.length; i < len; i++) {
+    var user = users[i];
+   console.log('we are using user: ', user);
+    if (user.oid === oid) {
+      return fn(null, user);
+    }
+  }
+  return fn(null, null);
+};
+
 passport.use(new OIDCStrategy(strategy,
-  (req, iss, sub, profile, accessToken, refreshToken, done) => {
-    if (!profile.displayName) {
+  function(iss, sub, profile, accessToken, refreshToken, done) {
+    if (!profile.oid) {
       return done(new Error("No oid found"), null);
     }
     // asynchronous verification, for effect...
-    process.nextTick(() => {
-      profile.accessToken = accessToken;
-      profile.refreshToken = refreshToken;
-      return done(null, profile);
+    process.nextTick(function () {
+      findByOid(profile.oid, function(err, user) {
+        if (err) {
+          return done(err);
+        }
+        if (!user) {
+          // "Auto-registration"
+          users.push(profile);
+          return done(null, profile);
+        }
+        return done(null, user);
+      });
     });
   }
 ));

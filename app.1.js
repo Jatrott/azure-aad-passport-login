@@ -41,20 +41,20 @@ server.use(restify.bodyParser());
 server.use(expressSession({ secret: 'keyboard cat', resave: true, saveUninitialized: false }));
 server.use(passport.initialize());
 
+// Root doesn't require authentication.
 server.get('/', 
-  passport.authenticate('azuread-openidconnect', { failureRedirect: '/' }),
   function(req, res, next) {
     console.log('Root, has been served');
     res.write('I am (g)root');
     res.end();
-    next();
+    return next();
 });
 
 server.get('/login', 
   passport.authenticate('azuread-openidconnect', { failureRedirect: '/' }),
   function(req, res, next) {
-    console.log('Login was called in the Sample');
-    res.redirect('/');
+    console.log('Login function was called in the Sample'); // This wont happen due to passport redirect to the provided redirect URI.
+    res.redirect('/', next);
 });
 
 // POST /auth/openid/return
@@ -65,15 +65,15 @@ server.get('/login',
 server.get('/auth/openid/return',
   passport.authenticate('azuread-openidconnect', { failureRedirect: '/' }),
   function(req, res, next) { 
-    console.log("the king has returned");
-    res.redirect('/');
+    console.log("the king (authentication) has returned");
+    res.write('I am authenticated (g)root');
     res.end();
-    next();
+    return next();
   });
 
 server.get('/logout', function(req, res, next){
   req.logout();
-  res.redirect('/');
+  res.redirect('/', next);
 });
 
 passport.serializeUser(function(user, done) {
